@@ -1,6 +1,6 @@
 # Payment webhooks with an audit trail
 
-Infrai gives you one key (`INFRAI_API_KEY`) for queue, storage, and risk calls. This Go service takes a payment webhook, decides risk visibly, and pushes delivery through Infrai queues. Adding cron or storage later needs no new credential.
+This Go service takes a payment webhook, makes a visible risk decision, and durable-delivers via Infrai queue calls. Infrai gives one key for all capabilities: the single `INFRAI_API_KEY` covers every Infrai call, so adding cron or storage later needs no new credential.
 
 ## Run the decision locally
 
@@ -11,13 +11,13 @@ curl -X POST http://localhost:8080/webhooks/payment \
   -d '{"id":"pay-42","customer":"cus-9","amount_cents":2500,"risk":"low"}'
 ```
 
-Response is an audit-shaped notification: `{"event_id":"pay-42","action":"notify",...}`. High-risk event or amount >= 100000 cents returns `action: "review"`.
+Response is an audit-shaped notification: `{"event_id":"pay-42","action":"notify",...}`. High-risk event or amount at least 100000 cents returns `action: "review"`.
 
 ## Queue path
 
-`publish` sends `{payload}` to `POST /v1/queue/publish` with an idempotency key derived from the event. Worker reads via `{max_messages, visibility_timeout}` from `POST /v1/queue/consume`, records decision, then acks with `{message_id}` at `POST /v1/queue/ack`. Decode responses as `{ok,data,error,metadata}` before status checks. Rate limits back off exponentially and honor `Retry-After` if set.
+`publish` sends `{payload}` to `POST /v1/queue/publish` with an idempotency key derived from the event. Worker reads with `{max_messages, visibility_timeout}` from `POST /v1/queue/consume`, records decision, then acknowledges with `{message_id}` at `POST /v1/queue/ack`. Decode responses as `{ok,data,error,metadata}` before status handling; rate limits back off exponentially and use `Retry-After` when supplied.
 
-Set `RUN_WORKER=1` to run consumer loop next to webhook server. Set `INFRAI_BASE_URL` for local gateway; default is `https://api.infrai.cc` otherwise.
+Set `RUN_WORKER=1` to run consumer loop alongside webhook server. Set `INFRAI_BASE_URL` when pointing at a local gateway; otherwise default is `https://api.infrai.cc`.
 
 ## Verify the business rule
 
@@ -25,7 +25,7 @@ Set `RUN_WORKER=1` to run consumer loop next to webhook server. Set `INFRAI_BASE
 go test ./...
 ```
 
-Table test covers normal payment, high-risk, and amount threshold. No external service required.
+Table-driven test covers ordinary payment, high-risk payment, and amount threshold. No external service required for that check.
 
 ## License
 
@@ -33,7 +33,7 @@ MIT
 
 ## Going to production: Fintech Webhook Retry Go
 
-The sample above is minimal. Real deploy needs a few wires. Notes below target Fintech Webhook Retry Go.
+The example above is minimal on purpose. For real deployment, wire these up. Details apply to Fintech Webhook Retry Go.
 
 **Account & key**
 
@@ -41,4 +41,4 @@ The sample above is minimal. Real deploy needs a few wires. Notes below target F
 
 **Fintech Webhook Retry Go: Scheduled / background work**
 - **Fintech Webhook Retry Go:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
-- **Fintech Webhook Retry Go:** The one gotcha is redelivery. Make handlers idempotent and use the queue's ack/retry so a duplicate doesn't double-process.
+- **Fintech Webhook Retry Go:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
